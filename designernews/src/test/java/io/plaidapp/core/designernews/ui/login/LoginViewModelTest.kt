@@ -17,20 +17,25 @@
 package io.plaidapp.core.designernews.ui.login
 
 import android.arch.core.executor.testing.InstantTaskExecutorRule
+import com.nhaarman.mockito_kotlin.mock
+import com.nhaarman.mockito_kotlin.never
+import com.nhaarman.mockito_kotlin.verify
+import com.nhaarman.mockito_kotlin.whenever
+import io.plaidapp.R
 import io.plaidapp.core.data.Result
 import io.plaidapp.core.designernews.data.login.LoginRepository
 import io.plaidapp.core.designernews.data.users.model.User
-import io.plaidapp.test.shared.LiveDataTestUtil
+import io.plaidapp.core.util.event.Event
+import io.plaidapp.designernews.ui.login.LoginResultUiModel
 import io.plaidapp.designernews.ui.login.LoginUiModel
 import io.plaidapp.designernews.ui.login.LoginViewModel
+import io.plaidapp.test.shared.LiveDataTestUtil
 import io.plaidapp.test.shared.provideFakeCoroutinesContextProvider
 import kotlinx.coroutines.experimental.runBlocking
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
+import org.junit.Assert.assertNotNull
 import org.junit.Rule
 import org.junit.Test
-import org.mockito.Mockito
-import org.mockito.Mockito.mock
 import java.io.IOException
 
 /**
@@ -43,13 +48,20 @@ class LoginViewModelTest {
     var instantTaskExecutorRule = InstantTaskExecutorRule()
 
     private val username = "Plaid"
-    private val pass = "design"
+    private val password = "design"
+    private val initialUiModel = LoginUiModel(
+        showProgress = false,
+        showError = null,
+        showSuccess = null,
+        enableLoginButton = false
+    )
 
-    private val loginRepo = mock(LoginRepository::class.java)
-    private val viewModel = LoginViewModel(loginRepo, provideFakeCoroutinesContextProvider())
+    private val loginRepo: LoginRepository = mock()
 
     @Test
-    fun successEmitted_whenUserLoggedInSuccessfully() = runBlocking {
+    fun login_whenUserLoggedInSuccessfully() = runBlocking {
+        // Given a view model
+        val viewModel = LoginViewModel(loginRepo, provideFakeCoroutinesContextProvider())
         // Given that the repository returns a user
         val user = User(
             id = 3,
@@ -58,41 +70,152 @@ class LoginViewModelTest {
             displayName = "Plaida Plaidich",
             portraitUrl = "www"
         )
-        val uiModel = LoginUiModel("plaida plaidich", "www")
-        Mockito.`when`(loginRepo.login(username, pass)).thenReturn(Result.Success(user))
+
+        whenever(loginRepo.login(username, password)).thenReturn(Result.Success(user))
 
         // When logging in
-        viewModel.login(username, pass)
+        viewModel.login(username, password)
 
         // Then the correct UI model is created
+        val expected = LoginUiModel(
+            showProgress = false,
+            showError = null,
+            showSuccess = Event(LoginResultUiModel("plaida plaidich", "www")),
+            enableLoginButton = false
+        )
         val event = LiveDataTestUtil.getValue(viewModel.uiState)
-        assertEquals(Result.Success(uiModel), event)
+        assertEquals(expected, event)
     }
 
     @Test
-    fun errorEmitted_whenUserLogInFailed() = runBlocking {
+    fun login_whenUserLogInFailed() = runBlocking {
+        // Given a view model
+        val viewModel = LoginViewModel(loginRepo, provideFakeCoroutinesContextProvider())
         // Given that the repository returns with error
-        Mockito.`when`(loginRepo.login(username, pass))
+        whenever(loginRepo.login(username, password))
             .thenReturn(Result.Error(IOException("Login error")))
 
         // When logging in
-        viewModel.login(username, pass)
+        viewModel.login(username, password)
 
         // Then the correct UI model is created
+        val expectedUiModel = LoginUiModel(
+            showProgress = false,
+            showError = Event(R.string.login_failed),
+            showSuccess = null,
+            enableLoginButton = true
+        )
         val event = LiveDataTestUtil.getValue(viewModel.uiState)
-        assertTrue(event is Result.Error)
+        assertEquals(expectedUiModel, event)
     }
 
     @Test
-    fun loadingIgnored_whenLoadingEmitted() = runBlocking {
-        // Given that the repository returns loading
-        Mockito.`when`(loginRepo.login(username, pass)).thenReturn(Result.Loading)
+    fun init_disablesLogin() = runBlocking {
+        // When the view model is created
+        val viewModel = LoginViewModel(loginRepo, provideFakeCoroutinesContextProvider())
 
-        // When logging in
-        viewModel.login(username, pass)
-
-        // Then only the initial loading event was triggered
+        // Then the login is disabled
         val event = LiveDataTestUtil.getValue(viewModel.uiState)
-        assertEquals(Result.Loading, event)
+        assertEquals(initialUiModel, event)
+    }
+
+    @Test
+    fun loginDataChanged_withValidLogin() = runBlocking {
+        // Given a view model
+        val viewModel = LoginViewModel(loginRepo, provideFakeCoroutinesContextProvider())
+
+        // When login data changed with valid login data
+        viewModel.loginDataChanged(username, password)
+
+        // Then the correct UI model is created
+        val expectedUiModel = LoginUiModel(
+            showProgress = false,
+            showError = null,
+            showSuccess = null,
+            enableLoginButton = true
+        )
+        val event = LiveDataTestUtil.getValue(viewModel.uiState)
+        assertEquals(expectedUiModel, event)
+    }
+
+    @Test
+    fun loginDataChanged_withEmptyUsername() = runBlocking {
+        // Given a view model
+        val viewModel = LoginViewModel(loginRepo, provideFakeCoroutinesContextProvider())
+
+        // When login data changed with invalid login data
+        viewModel.loginDataChanged("", password)
+
+        // Then the correct UI model is created
+        val expectedUiModel = LoginUiModel(
+            showProgress = false,
+            showError = null,
+            showSuccess = null,
+            enableLoginButton = false
+        )
+        val event = LiveDataTestUtil.getValue(viewModel.uiState)
+        assertEquals(expectedUiModel, event)
+    }
+
+    @Test
+    fun loginDataChanged_withEmptyPassword() = runBlocking {
+        // Given a view model
+        val viewModel = LoginViewModel(loginRepo, provideFakeCoroutinesContextProvider())
+
+        // When login data changed with invalid login data
+        viewModel.loginDataChanged(username, "")
+
+        // Then the correct UI model is created
+        val expectedUiModel = LoginUiModel(
+            showProgress = false,
+            showError = null,
+            showSuccess = null,
+            enableLoginButton = false
+        )
+        val event = LiveDataTestUtil.getValue(viewModel.uiState)
+        assertEquals(expectedUiModel, event)
+    }
+
+    @Test
+    fun login_withEmptyUsername() = runBlocking {
+        // Given a view model
+        val viewModel = LoginViewModel(loginRepo, provideFakeCoroutinesContextProvider())
+
+        // When logging in with invalid login data
+        viewModel.login("", password)
+
+        // Then login is not triggered
+        verify(loginRepo, never()).login(username, "")
+        // Then the UI state is the initial state
+        val event = LiveDataTestUtil.getValue(viewModel.uiState)
+        assertEquals(initialUiModel, event)
+    }
+
+    @Test
+    fun login_withEmptyPassword() = runBlocking {
+        // Given a view model
+        val viewModel = LoginViewModel(loginRepo, provideFakeCoroutinesContextProvider())
+
+        // When logging in with invalid login data
+        viewModel.loginDataChanged(username, "")
+
+        // Then login is not triggered
+        verify(loginRepo, never()).login(username, "")
+        // Then the UI state is the initial state
+        val event = LiveDataTestUtil.getValue(viewModel.uiState)
+        assertEquals(initialUiModel, event)
+    }
+
+    @Test
+    fun signup() = runBlocking {
+        // Given a view model
+        val viewModel = LoginViewModel(loginRepo, provideFakeCoroutinesContextProvider())
+
+        // When signing up
+        viewModel.signup()
+
+        // Then an open url event is emitted
+        val event = LiveDataTestUtil.getValue(viewModel.openUrl)
+        assertNotNull(event)
     }
 }
